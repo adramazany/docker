@@ -1,0 +1,5 @@
+IMAGE                                                                     CREATED         CREATED BY                                                                                          SIZE      COMMENT
+sha256:86226de74a8c5d79637afce562c03d32b53ad9bf762bbe45a26c18cfdb04631f   2 months ago    /bin/sh -c #(nop)  CMD ["/bin/bash"]                                                                0B        
+<missing>                                                                 2 months ago    /bin/sh -c #(nop) ADD file:86d740c804b04f47a13a75b739763fe4c07ec0072e3493e593c605eb86234d35 in /    191MB     
+<missing>                                                                 13 months ago   /bin/sh -c #(nop)  ENV DISTTAG=f38container FGC=f38 FBR=f38                                         0B        
+<missing>                                                                 2 years ago     /bin/sh -c #(nop)  LABEL maintainer=Clement Verna <cverna@fedoraproject.org>                        0B        

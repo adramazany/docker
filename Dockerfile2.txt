@@ -1,0 +1,153 @@
+CMD ["cassandra" "-f"] 
+EXPOSE map[7000/tcp:{} 7001/tcp:{} 7199/tcp:{} 9042/tcp:{} 9160/tcp:{}] 
+ENTRYPOINT ["docker-entrypoint.sh"] 
+COPY docker-entrypoint.sh /usr/local/bin/ # buildkit 
+VOLUME [/var/lib/cassandra] 
+RUN /bin/sh -c set -eux; \ 
+ savedAptMark="$(apt-mark showmanual)"; \ 
+ apt-get update; \ 
+ apt-get install -y --no-install-recommends ca-certificates gnupg wget; \ 
+ rm -rf /var/lib/apt/lists/*; \ 
+ ddist() { local f="$1"; \ 
+	 shift; \ 
+	 local distFile="$1"; \ 
+	 shift; \ 
+	 local success=; \ 
+	 local distUrl=; \ 
+	 for distUrl in 'https://www.apache.org/dyn/closer.cgi?action=download&filename=' https://www-us.apache.org/dist/ https://www.apache.org/dist/ https://archive.apache.org/dist/ ; \ 
+	 do 
+		if wget --progress=dot:giga -O "$f" "$distUrl$distFile" && [ -s "$f" ]; \ 
+		then success=1; \ 
+			break; \ 
+		fi; \ 
+	 done; \ 
+	 [ -n "$success" ]; \ 
+ }; \ 
+ ddist 'cassandra-bin.tgz' "cassandra/$CASSANDRA_VERSION/apache-cassandra-$CASSANDRA_VERSION-bin.tar.gz"; \ 
+ echo "$CASSANDRA_SHA512 *cassandra-bin.tgz" | sha512sum --check --strict -; \ 
+ ddist 'cassandra-bin.tgz.asc' "cassandra/$CASSANDRA_VERSION/apache-cassandra-$CASSANDRA_VERSION-bin.tar.gz.asc"; \ 
+ export GNUPGHOME="$(mktemp -d)"; \ 
+ for key in $GPG_KEYS; \ 
+ do gpg --batch --keyserver keyserver.ubuntu.com --recv-keys "$key"; \ 
+ done; \ 
+ gpg --batch --verify cassandra-bin.tgz.asc cassandra-bin.tgz; \ 
+ rm -rf "$GNUPGHOME"; \ 
+ apt-mark auto '.*' > /dev/null; \ 
+ [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark > /dev/null; \ 
+ apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \ 
+ mkdir -p "$CASSANDRA_HOME"; \ 
+ tar --extract --file cassandra-bin.tgz --directory "$CASSANDRA_HOME" --strip-components 1; \ 
+ rm cassandra-bin.tgz*; \ 
+ [ ! -e "$CASSANDRA_CONF" ]; \ 
+ mv "$CASSANDRA_HOME/conf" "$CASSANDRA_CONF"; \ 
+ ln -sT "$CASSANDRA_CONF" "$CASSANDRA_HOME/conf"; \ 
+ dpkgArch="$(dpkg --print-architecture)"; \ 
+ case "$dpkgArch" in ppc64el) grep -- '^-Xss256k$' "$CASSANDRA_CONF/jvm-server.options"; \ 
+ sed -ri 's/^-Xss256k$/-Xss512k/' "$CASSANDRA_CONF/jvm-server.options"; \ 
+ grep -- '^-Xss512k$' "$CASSANDRA_CONF/jvm-server.options"; \ 
+ ; \ 
+; \ 
+ esac; \ 
+ mkdir -p "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \ 
+ chown -R cassandra:cassandra "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \ 
+ chmod 1777 "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \ 
+ chmod -R a+rwX "$CASSANDRA_CONF"; \ 
+ ln -sT /var/lib/cassandra "$CASSANDRA_HOME/data"; \ 
+ ln -sT /var/log/cassandra "$CASSANDRA_HOME/logs"; \ 
+ cassandra -v # buildkit 
+ENV CASSANDRA_SHA512=393443a5b9849645362df2f7536e734e1fc6d513aadf440fab8dda3063553394a138805098796d35f9d4d31e2899ecab630a2ec2a44d00d5e63bed549a2e844c 
+ENV CASSANDRA_VERSION=4.1.3 
+ENV GPG_KEYS=CEC86BB4A0BA9D0F90397CAEF8358FA2F2833C93 C4965EE9E3015D192CCCF2B6F758CE318D77295D 5AED1BF378E9A19DADE1BCB34BD736A82B5C1B00 514A2AD631A57A16DD0047EC749D6EEC0353B12C A26E528B271F19B9E5D8E19EA278B781FE4B2BDA A4C465FEA0C552561A392A61E91335D77E3E87CB 9E66CEC6106D578D0B1EB9BFF1000962B7F6840C C4009872C59B49561310D966D0062876AF30F054 B7842CDAF36E6A3214FAE35D5E85B9AE0B84C041 3E9C876907A560ACA00964F363E9BAD215BBF5F0 F8B7FD00E05C932991A2CD6150EE103D162C5A55 7464AAD9068241C50BA6A26232F35CB2F546D93E CEC5C50B9C629EF0F5AB2706650B72EB14CCD622 
+ENV PATH=/opt/cassandra/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin 
+ENV CASSANDRA_CONF=/etc/cassandra 
+ENV CASSANDRA_HOME=/opt/cassandra 
+RUN /bin/sh -c set -eux; \ 
+ savedAptMark="$(apt-mark showmanual)"; \ 
+ apt-get update; \ 
+ apt-get install -y --no-install-recommends ca-certificates gnupg wget; \ 
+ rm -rf /var/lib/apt/lists/*; \ 
+ dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"; \ 
+ wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch"; \ 
+ wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc"; \ 
+ export GNUPGHOME="$(mktemp -d)"; \ 
+ gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \ 
+ gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \ 
+ gpgconf --kill all; \ 
+ rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc; \ 
+ apt-mark auto '.*' > /dev/null; \ 
+ [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark > /dev/null; \ 
+ apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \ 
+ chmod +x /usr/local/bin/gosu; \ 
+ gosu --version; \ 
+ gosu nobody true # buildkit 
+ENV GOSU_VERSION=1.16 
+RUN /bin/sh -c set -eux; \ 
+ apt-get update; \ 
+ apt-get install -y --no-install-recommends libjemalloc2 procps python3 iproute2 numactl ; \ 
+ rm -rf /var/lib/apt/lists/*; \ 
+ libjemalloc="$(readlink -e /usr/lib/*/libjemalloc.so.2)"; \ 
+ ln -sT "$libjemalloc" /usr/local/lib/libjemalloc.so; \ 
+ ldconfig # buildkit 
+RUN /bin/sh -c set -eux; \ 
+ groupadd -r cassandra --gid=999; \ 
+ useradd -r -g cassandra --uid=999 cassandra # buildkit 
+/bin/sh -c #(nop) ENTRYPOINT ["/__cacert_entrypoint.sh"] 
+/bin/sh -c #(nop) COPY file:8b8864b3e02a33a579dc216fd51b28a6047bc8eeaa03045b258980fe0cf7fcb3 in /__cacert_entrypoint.sh 
+/bin/sh -c set -eux; \ 
+ echo "Verifying install ..."; \ 
+ echo "java --version"; \ 
+ java --version; \ 
+ echo "Complete." 
+/bin/sh -c set -eux; \ 
+ ARCH="$(dpkg --print-architecture)"; \ 
+ case "${ARCH}" in aarch64|arm64) ESUM='8dc527e5c5da62f80ad3b6a2cd7b1789f745b1d90d5e83faba45f7a1d0b6cab8'; \ 
+ BINARY_URL='https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.21%2B9/OpenJDK11U-jre_aarch64_linux_hotspot_11.0.21_9.tar.gz'; \ 
+ ; \ 
+; \ 
+ amd64|i386:x86-64) ESUM='156861bb901ef18759e05f6f008595220c7d1318a46758531b957b0c950ef2c3'; \ 
+ BINARY_URL='https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.21%2B9/OpenJDK11U-jre_x64_linux_hotspot_11.0.21_9.tar.gz'; \ 
+ ; \ 
+; \ 
+ armhf|arm) ESUM='7c12ca8f195bf719368016a1c3e7f06f8f06e4a573dc3dce0befbe30a388ffa3'; \ 
+ BINARY_URL='https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.21%2B9/OpenJDK11U-jre_arm_linux_hotspot_11.0.21_9.tar.gz'; \ 
+ ; \ 
+; \ 
+ ppc64el|powerpc:common64) ESUM='286e37ce06316185377eea847d2aa9f1523b9f1428684e59e772f2f6055e89b9'; \ 
+ BINARY_URL='https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.21%2B9/OpenJDK11U-jre_ppc64le_linux_hotspot_11.0.21_9.tar.gz'; \ 
+ ; \ 
+; \ 
+ s390x|s390:64-bit) ESUM='78f18503970715c03b8e6e70191d9001c883edab23d9f51ff434e4a03c6237bd'; \ 
+ BINARY_URL='https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.21%2B9/OpenJDK11U-jre_s390x_linux_hotspot_11.0.21_9.tar.gz'; \ 
+ ; \ 
+; \ 
+ *) echo "Unsupported arch: ${ARCH}"; \ 
+ exit 1; \ 
+ ; \ 
+; \ 
+ esac; \ 
+ wget --progress=dot:giga -O /tmp/openjdk.tar.gz ${BINARY_URL}; \ 
+ echo "${ESUM} */tmp/openjdk.tar.gz" | sha256sum -c -; \ 
+ mkdir -p "$JAVA_HOME"; \ 
+ tar --extract --file /tmp/openjdk.tar.gz --directory "$JAVA_HOME" --strip-components 1 --no-same-owner ; \ 
+ rm -f /tmp/openjdk.tar.gz ${JAVA_HOME}/lib/src.zip; \ 
+ find "$JAVA_HOME/lib" -name '*.so' -exec dirname '{}' '; \ 
+' | sort -u > /etc/ld.so.conf.d/docker-openjdk.conf; \ 
+ ldconfig; \ 
+ java -Xshare:dump; \ 
+ 
+/bin/sh -c #(nop) ENV JAVA_VERSION=jdk-11.0.21+9 
+/bin/sh -c set -eux; \ 
+ apt-get update; \ 
+ DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl wget fontconfig ca-certificates p11-kit tzdata locales ; \ 
+ echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen; \ 
+ locale-gen en_US.UTF-8; \ 
+ rm -rf /var/lib/apt/lists/* 
+/bin/sh -c #(nop) ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 
+/bin/sh -c #(nop) ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin 
+/bin/sh -c #(nop) ENV JAVA_HOME=/opt/java/openjdk 
+/bin/sh -c #(nop) CMD ["/bin/bash"] 
+/bin/sh -c #(nop) ADD file:5696198fbfd4074852bdee76ffd84da75da8de76727cef4f0cdd265f7bee6b76 in / 
+/bin/sh -c #(nop) LABEL org.opencontainers.image.version=20.04 
+/bin/sh -c #(nop) LABEL org.opencontainers.image.ref.name=ubuntu 
+/bin/sh -c #(nop) ARG LAUNCHPAD_BUILD_ARCH 
+/bin/sh -c #(nop) ARG RELEASE 

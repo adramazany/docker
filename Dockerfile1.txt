@@ -1,0 +1,105 @@
+# docker login -u adramazany
+# docker build -t adramazany/cassandra:4.1.3-ssl .
+# docker run -d --name cassandra -p 9042:9042 -e CASSANDRA_LISTEN_ADDRESS=0.0.0.0 adramazany/cassandra:4.1.3-ssl
+# docker push
+#
+# docker pull cassandra:latest
+# docker tag cassandra:latest adramazany/cassandra:4.1.3-ssl
+# docker run -d --name cassandra -p 9042:9042 adramazany/cassandra:4.1.3-ssl
+# docker run -it cassandra cat Dockerfile
+#
+
+# docker history cassandra --no-trunc > Dockerfile
+
+
+
+
+FROM eclipse-temurin:11-jre-focal
+
+# explicitly set user/group IDs
+RUN set -eux; \
+	groupadd -r cassandra --gid=999; \
+	useradd -r -g cassandra --uid=999 cassandra
+
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
+# solves warning: "jemalloc shared library could not be preloaded to speed up memory allocations"
+		libjemalloc2 \
+# "free" is used by cassandra-env.sh
+		procps \
+# "cqlsh" needs a python interpreter
+		python3 \
+# "ip" is not required by Cassandra itself, but is commonly used in scripting Cassandra's configuration (since it is so fixated on explicit IP addresses)
+		iproute2 \
+# Cassandra will automatically use numactl if available
+#   https://github.com/apache/cassandra/blob/18bcda2d4c2eba7370a0b21f33eed37cb730bbb3/bin/cassandra#L90-L100
+#   https://github.com/apache/cassandra/commit/604c0e87dc67fa65f6904ef9a98a029c9f2f865a
+		numactl \
+# next part		
+		ca-certificates \
+		gnupg \
+		wget \
+	; \
+	rm -rf /var/lib/apt/lists/*; \
+# https://issues.apache.org/jira/browse/CASSANDRA-15767 ("bin/cassandra" only looks for "libjemalloc.so" or "libjemalloc.so.1" which doesn't match our "libjemalloc.so.2")
+	libjemalloc="$(readlink -e /usr/lib/*/libjemalloc.so.2)"; \
+	ln -sT "$libjemalloc" /usr/local/lib/libjemalloc.so; \
+	ldconfig
+
+
+ENV CASSANDRA_HOME /opt/cassandra
+ENV CASSANDRA_CONF /etc/cassandra
+ENV PATH $CASSANDRA_HOME/bin:$PATH
+ENV CASSANDRA_VERSION 4.1.3
+ENV CASSANDRA_SHA512 393443a5b9849645362df2f7536e734e1fc6d513aadf440fab8dda3063553394a138805098796d35f9d4d31e2899ecab630a2ec2a44d00d5e63bed549a2e844c
+
+# https://dlcdn.apache.org/cassandra/4.1.3/apache-cassandra-4.1.3-bin.tar.gz
+# https://dlcdn.apache.org/cassandra/4.1.3/apache-cassandra-4.1.3-bin.tar.gz.asc
+RUN set -eux; \
+	wget --progress=dot:giga -O "cassandra-bin.tgz" "https://dlcdn.apache.org/cassandra/$CASSANDRA_VERSION/apache-cassandra-$CASSANDRA_VERSION-bin.tar.gz"; \
+	echo "$CASSANDRA_SHA512 *cassandra-bin.tgz" | sha512sum --check --strict -; \
+	wget --progress=dot:giga -O "cassandra-bin.tgz.asc" "https://dlcdn.apache.org/cassandra/$CASSANDRA_VERSION/apache-cassandra-$CASSANDRA_VERSION-bin.tar.gz.asc"; \
+	export GNUPGHOME="$(mktemp -d)"; \
+	# gpg --batch --verify cassandra-bin.tgz.asc cassandra-bin.tgz; # gpg: Can't check signature: No public key \
+	rm -rf "$GNUPGHOME"; \
+	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+	mkdir -p "$CASSANDRA_HOME"; \
+	tar --extract --file cassandra-bin.tgz --directory "$CASSANDRA_HOME" --strip-components 1; \
+	rm cassandra-bin.tgz*; \
+	\
+	[ ! -e "$CASSANDRA_CONF" ]; \
+	mv "$CASSANDRA_HOME/conf" "$CASSANDRA_CONF"; \
+	ln -sT "$CASSANDRA_CONF" "$CASSANDRA_HOME/conf"; \
+	\
+	mkdir -p "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \
+	chown -R cassandra:cassandra "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \
+	chmod 1777 "$CASSANDRA_CONF" /var/lib/cassandra /var/log/cassandra; \
+	chmod -R a+rwX "$CASSANDRA_CONF"; \
+	ln -sT /var/lib/cassandra "$CASSANDRA_HOME/data"; \
+	ln -sT /var/log/cassandra "$CASSANDRA_HOME/logs"; 
+	
+# configuration of cassandra.yaml
+# sed -i -r '0,/^\s\senabled:.*/{s//  enabled: true/}' "$CASSANDRA_CONF/cassandra.yaml"; \
+RUN set -eux; \
+	chmod +x "$CASSANDRA_HOME/bin/cassandra"; \
+	sed -i -r '0,/^listen_address: localhost/{s//listen_address: 0.0.0.0/}' "$CASSANDRA_CONF/cassandra.yaml"; \
+	grep -n "\s\senabled:" "$CASSANDRA_CONF/cassandra.yaml"; \
+	\
+# smoke test
+	cassandra -v
+
+VOLUME /var/lib/cassandra
+
+COPY docker-entrypoint.sh /usr/local/bin/
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# 7000: intra-node communication
+# 7001: TLS intra-node communication
+# 7199: JMX
+# 9042: CQL
+# 9160: thrift service
+EXPOSE 7000 7001 7199 9042 9160
+CMD ["cassandra", "-f"]
+

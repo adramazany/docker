@@ -1,0 +1,9 @@
+[connection]
+hostname = localhost
+port = 9042
+factory = cqlshlib.ssl.ssl_transport_factory
+
+[ssl]
+certfile =  D:\Development\FactoryLeader\_factory.LEADER\apache-cassandra-3.9\conf\crt\test_CLIENT.cer.pem
+validate = false
+version = SSLv23

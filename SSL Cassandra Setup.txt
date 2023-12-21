@@ -1,0 +1,49 @@
+***** Download certificate files *****
+Save the cassandra.keystore, cassandra.truststore and Cassandra_CLIENT.cer.pem files from 
+\\ro-filedat1-srv\Automation\DSRP\Software-Eng\Industrial Solution Software\PalaMax\Resources\Installer\SSL Cassandra
+to your local cassandra folder (create a dedicated folder for the files, e.g. certificate or cert).
+
+Save the cqlshrc file into .cassandra folder under your local user folder on C: drive from the same shared folder.
+And replace the certfile path to your local Cassandra_CLIENT.cer.pem inside it.
+
+
+***** Starting Cassandra with SSL *****
+In cassandra.yaml file in local cassandra\conf folder, in the section client_encryption_options:
+- change enabled: to true,
+- change keystore: to local path to the cassandra.keystore file including the file name,
+- change keystore_password: to Pala_Max007.
+
+Restart your cassandra service and check the log file (either debug.log or system.log) in local cassandra logs folder, 
+whether the service started correctly with SSL enabled - look for "Starting listening for CQL clients on localhost/127.0.0.1:9042 (encrypted)..." line.
+
+
+*****  Connecting to Cassandra with DBeaver via SSL *****
+Edit cassandra connection in DBeaver (right-click the localhost) -> on Driver properties card:  
+- the SSLMode property, set the value to 1, and
+Add user properties:
+- SSLTrustStorePath, set the value to local path to cassandra.truststore file including the file name,
+- SSLTrustStporePwd, set the value to Pala_Max007,
+- UseSslIdentityCheck, set the value to 0.
+
+Connect to cassandra in DBeaver.
+
+
+*****  Connecting to Cassandra with Spark job via SSL *****
+In Eclipse, in CassandraConfiguration.scala:
+- in sslEnabled value, change the value to true,
+- in trustStorePath value, add the local path to cassandra.truststore file, including the file name.
+- in trustStorePassword value, add the "Pala_Max007" password.
+
+Make sure your jobs in eclipse are cleaned from older builds and dependencies. To do so, right-click your build-data-processing package, hover over Run As and
+select Maven clean. When finished, do the same selecting Maven install. 
+Finally press Alt+F5 -> Select all -> Update project configuration... -> hit OK
+
+Run one of jobs (preferrably a stream job) to test whether the SSL setup works.
+
+
+*****  Connecting to Cassandra with CQLSH via SSL ***** 
+Open command line in cassandra/bin folder.
+Check the version of python with "python -v" command. If you don't have the Python 2.7.10 version install one from the shared folder.
+Check the version of java with "java -version". You need to use the JDK8 version.
+Check the path of certfile is refer to Cassandra_CLIENT.cer.pem in the cqlshrc file
+Run the "cqlsh --ssl" command.
